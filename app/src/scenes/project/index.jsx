@@ -17,6 +17,9 @@ export default function ProjectView() {
   const [expenses, setExpenses] = useState([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [users, setUsers] = useState([])
+  const [userEmail, setUserEmail] = useState("")
+  const [addingUser, setAddingUser] = useState(false)
   const [showAddModal, setShowAddModal] = useState(false)
   const [amount, setAmount] = useState("")
   // categories list (static defaults). The user may optionally type a custom category per-expense.
@@ -31,10 +34,11 @@ export default function ProjectView() {
     let mounted = true
     const fetch = async () => {
       try {
-        const [projRes, expRes, totRes] = await Promise.all([
+        const [projRes, expRes, totRes, usersRes] = await Promise.all([
           api.get(`/project/${id}`),
           api.get(`/expense/project/${id}`),
           api.get(`/expense/project/${id}/total`),
+          api.get(`/project/${id}/users`),
         ])
 
         if (!mounted) return
@@ -42,6 +46,7 @@ export default function ProjectView() {
         if (projRes && projRes.ok) setProject(projRes.data)
         if (expRes && expRes.ok) setExpenses(expRes.data || [])
         if (totRes && totRes.ok) setTotal(totRes.data?.total || 0)
+        if (usersRes && usersRes.ok) setUsers(usersRes.data || [])
       } catch (e) {
         console.error(e)
       } finally {
@@ -73,66 +78,111 @@ export default function ProjectView() {
         </div>
       </div>
 
-      <div className="mb-4">
-        <button onClick={() => { setShowAddModal(true); setAmount(""); setCategory(categories[0] || ""); setDescription(""); setDate(new Date().toISOString().slice(0,10)); setCustomCategory(""); }} className="px-3 py-1 rounded-md bg-primary text-white">
-          Ajouter une dépense
-        </button>
+      
+
+      <div className="flex gap-6">
+        <div className="flex-1">
+          <div className="mb-4">
+            <button onClick={() => { setShowAddModal(true); setAmount(""); setCategory(categories[0] || ""); setDescription(""); setDate(new Date().toISOString().slice(0,10)); setCustomCategory(""); }} className="px-3 py-1 rounded-md bg-primary text-white">
+              Ajouter une dépense
+            </button>
+          </div>
+
+          <h2 className="text-lg font-medium mb-3">Dépenses</h2>
+          {expenses.length === 0 ? (
+            <div className="text-gray-500">Aucune dépense pour ce projet.</div>
+          ) : (
+            <ul className="space-y-2">
+              {expenses.map((e) => (
+                <li key={e._id || e.id} className="p-3 bg-white rounded-md border flex justify-between">
+                  <div>
+                    <div className="font-medium">{e.description}</div>
+                    <div className="text-sm text-gray-600">{e.category}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="font-semibold">{e.amount} €</div>
+                    <div className="text-sm text-gray-500">{new Date(e.date).toLocaleDateString()}</div>
+                    <div className="mt-2">
+                      <button onClick={async () => {
+                          if (!confirm('Supprimer cette dépense ?')) return
+
+                          // optimistic UI: remove locally first
+                          const expenseId = e._id || e.id
+                          const amt = parseFloat(e.amount) || 0
+                          const previousExpenses = expenses
+                          const previousTotal = total
+
+                          setExpenses((cur) => cur.filter((x) => (x._id || x.id) !== expenseId))
+                          setTotal((t) => Math.max(0, t - amt))
+
+                          try {
+                            const res = await api.delete(`/expense/${expenseId}`)
+                            if (res && res.ok) {
+                              // success: optionally re-sync with backend totals
+                              const totRes = await api.get(`/expense/project/${id}/total`)
+                              if (totRes && totRes.ok) setTotal(totRes.data?.total || 0)
+                            } else {
+                              // revert optimistic update
+                              setExpenses(previousExpenses)
+                              setTotal(previousTotal)
+                              console.error('Delete expense response:', res)
+                              alert(res && res.code ? `Impossible de supprimer la dépense: ${res.code}` : 'Impossible de supprimer la dépense')
+                            }
+                          } catch (err) {
+                            // revert on error
+                            setExpenses(previousExpenses)
+                            setTotal(previousTotal)
+                            console.error(err)
+                            alert('Erreur lors de la suppression')
+                          }
+                        }} className="text-sm text-red-600 mt-1">Supprimer</button>
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <aside className="w-80">
+          <div className="sticky top-20 bg-white p-4 rounded-md border">
+            <h3 className="text-md font-medium mb-2">Participants ({users.length})</h3>
+            <div className="mb-2 flex gap-2 items-center">
+              <input value={userEmail} onChange={(e) => setUserEmail(e.target.value)} placeholder="Ajouter par email" className="rounded-md border px-3 py-2 w-full" />
+              <button onClick={async () => {
+                  const email = (userEmail || "").trim()
+                  if (!email) return alert('Email requis')
+                  setAddingUser(true)
+                  try {
+                    const res = await api.post(`/project/${id}/users`, { email })
+                    setAddingUser(false)
+                    setUserEmail("")
+                    if (!res || !res.ok) {
+                      alert(res && res.code ? `Impossible d'ajouter l'utilisateur: ${res.code}` : 'Impossible d\'ajouter l\'utilisateur')
+                      return
+                    }
+
+                    // recharger la liste des utilisateurs
+                    const usersRes = await api.get(`/project/${id}/users`)
+                    if (usersRes && usersRes.ok) setUsers(usersRes.data || [])
+                  } catch (err) {
+                    setAddingUser(false)
+                    console.error(err)
+                    alert('Erreur lors de l\'ajout de l\'utilisateur')
+                  }
+                }} className="px-3 py-1 rounded-md bg-primary text-white">{addingUser ? 'Ajout...' : 'Ajouter'}</button>
+            </div>
+            <ul className="space-y-1 max-h-96 overflow-auto">
+              {users.map((u) => (
+                <li key={u._id || u.id} className="p-2 rounded-md border">
+                  <div className="font-medium">{u.name || u.fullName || ''}</div>
+                  <div className="text-sm text-gray-600">{u.email}</div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </aside>
       </div>
-
-      <h2 className="text-lg font-medium mb-3">Dépenses</h2>
-      {expenses.length === 0 ? (
-        <div className="text-gray-500">Aucune dépense pour ce projet.</div>
-      ) : (
-        <ul className="space-y-2">
-          {expenses.map((e) => (
-            <li key={e._id || e.id} className="p-3 bg-white rounded-md border flex justify-between">
-              <div>
-                <div className="font-medium">{e.description}</div>
-                <div className="text-sm text-gray-600">{e.category}</div>
-              </div>
-              <div className="text-right">
-                <div className="font-semibold">{e.amount} €</div>
-                <div className="text-sm text-gray-500">{new Date(e.date).toLocaleDateString()}</div>
-                <div className="mt-2">
-                  <button onClick={async () => {
-                      if (!confirm('Supprimer cette dépense ?')) return
-
-                      // optimistic UI: remove locally first
-                      const expenseId = e._id || e.id
-                      const amt = parseFloat(e.amount) || 0
-                      const previousExpenses = expenses
-                      const previousTotal = total
-
-                      setExpenses((cur) => cur.filter((x) => (x._id || x.id) !== expenseId))
-                      setTotal((t) => Math.max(0, t - amt))
-
-                      try {
-                        const res = await api.delete(`/expense/${expenseId}`)
-                        if (res && res.ok) {
-                          // success: optionally re-sync with backend totals
-                          const totRes = await api.get(`/expense/project/${id}/total`)
-                          if (totRes && totRes.ok) setTotal(totRes.data?.total || 0)
-                        } else {
-                          // revert optimistic update
-                          setExpenses(previousExpenses)
-                          setTotal(previousTotal)
-                          console.error('Delete expense response:', res)
-                          alert(res && res.code ? `Impossible de supprimer la dépense: ${res.code}` : 'Impossible de supprimer la dépense')
-                        }
-                      } catch (err) {
-                        // revert on error
-                        setExpenses(previousExpenses)
-                        setTotal(previousTotal)
-                        console.error(err)
-                        alert('Erreur lors de la suppression')
-                      }
-                    }} className="text-sm text-red-600 mt-1">Supprimer</button>
-                </div>
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
 
       {showAddModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">

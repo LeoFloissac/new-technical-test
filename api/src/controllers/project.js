@@ -4,6 +4,7 @@ const passport = require("passport");
 
 const Project = require("../models/project");
 const ProjectMember = require("../models/project_member");
+const User = require("../models/user");
 const ERROR_CODES = require("../utils/errorCodes");
 
 // Liste des projets dont l'utilisateur fait partie
@@ -58,6 +59,71 @@ router.post("/", passport.authenticate("user", { session: false, failWithError: 
     }
 
     return res.status(200).send({ ok: true, data: project });
+  } catch (error) {
+    console.log(error);
+    return res.status(500).send({ ok: false, code: ERROR_CODES.SERVER_ERROR });
+  }
+});
+
+// Ajouter un utilisateur à un projet par email (l'utilisateur courant doit être membre)
+router.post("/:id/users", passport.authenticate("user", { session: false, failWithError: true }), async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) return res.status(400).send({ ok: false, code: ERROR_CODES.INVALID_BODY });
+
+    // vérifier que la requête est faite par un membre du projet
+    const requesterMembership = await ProjectMember.findOne({ projectId: req.params.id, userId: req.user._id });
+    if (!requesterMembership) return res.status(404).send({ ok: false, code: ERROR_CODES.NOT_FOUND });
+
+    // vérifier que le projet existe
+    const project = await Project.findById(req.params.id);
+    if (!project) return res.status(404).send({ ok: false, code: ERROR_CODES.NOT_FOUND });
+
+    // trouver l'utilisateur par email (normalisé)
+    const normalizedEmail = String(email).trim().toLowerCase();
+    const userToAdd = await User.findOne({ email: normalizedEmail });
+    if (!userToAdd) return res.status(404).send({ ok: false, code: ERROR_CODES.USER_NOT_EXISTS });
+
+    const userId = userToAdd._id;
+
+    // éviter les doublons
+    const existing = await ProjectMember.findOne({ projectId: req.params.id, userId });
+    if (existing) return res.status(200).send({ ok: true, data: existing });
+
+    // créer la relation membre
+    try {
+      const newMember = await ProjectMember.create({ projectId: req.params.id, userId });
+      return res.status(200).send({ ok: true, data: newMember });
+    } catch (e) {
+      console.log("project member create failed", e);
+      return res.status(500).send({ ok: false, code: ERROR_CODES.SERVER_ERROR });
+    }
+  } catch (error) {
+    console.log(error);
+    return res.status(500).send({ ok: false, code: ERROR_CODES.SERVER_ERROR });
+  }
+});
+
+// Récupérer les utilisateurs d'un projet (l'utilisateur courant doit être membre)
+router.get("/:id/users", passport.authenticate("user", { session: false, failWithError: true }), async (req, res) => {
+  try {
+    // vérifier que la requête est faite par un membre du projet
+    const requesterMembership = await ProjectMember.findOne({ projectId: req.params.id, userId: req.user._id });
+    if (!requesterMembership) return res.status(404).send({ ok: false, code: ERROR_CODES.NOT_FOUND });
+
+    // vérifier que le projet existe
+    const project = await Project.findById(req.params.id);
+    if (!project) return res.status(404).send({ ok: false, code: ERROR_CODES.NOT_FOUND });
+
+    // récupérer toutes les relations membres du projet
+    const memberships = await ProjectMember.find({ projectId: req.params.id }).select("userId");
+    const userIds = memberships.map((m) => m.userId);
+
+    // récupérer les utilisateurs
+    const users = await User.find({ _id: { $in: userIds } }).select("-password");
+
+    return res.status(200).send({ ok: true, data: users });
   } catch (error) {
     console.log(error);
     return res.status(500).send({ ok: false, code: ERROR_CODES.SERVER_ERROR });
