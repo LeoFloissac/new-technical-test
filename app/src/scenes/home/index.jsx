@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react"
 import FileInput from "@/components/file-input"
+import { Link } from "react-router-dom"
 import api from "@/services/api"
 
 export default function Home() {
@@ -57,10 +58,12 @@ export default function Home() {
         <ul className="space-y-3">
           {projects.map((p) => (
             <li key={p._id || p.id} className="flex items-center justify-between p-3 bg-white rounded-md border">
-              <div>
-                <div className="font-medium">{p.name}</div>
-                <div className="text-sm text-gray-500">Budget: {p.budget} €</div>
-              </div>
+              <Link to={`/project/${p._id || p.id}`} className="flex-1">
+                <div>
+                  <div className="font-medium">{p.name}</div>
+                  <div className="text-sm text-gray-500">Budget: {p.budget} €</div>
+                </div>
+              </Link>
               <div className="flex items-center gap-2">
                 <button onClick={() => handleDelete(p._id || p.id)} className="px-3 py-1 text-sm text-red-600 border rounded-md">
                   Supprimer

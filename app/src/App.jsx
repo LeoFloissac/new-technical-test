@@ -5,6 +5,7 @@ import * as Sentry from "@sentry/browser"
 
 import Auth from "@/scenes/auth"
 import Home from "@/scenes/home"
+import Project from "@/scenes/project"
 
 import Navbar from "@/components/NavBar"
 import TopBar from "@/components/TopBar"
@@ -28,6 +29,7 @@ export default function App() {
         </Route>
         <Route element={<UserLayout />}>
           <Route path="/" element={<Home />} />
+          <Route path="/project/:id" element={<Project />} />
         </Route>
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
