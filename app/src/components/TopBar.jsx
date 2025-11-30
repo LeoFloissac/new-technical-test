@@ -55,8 +55,15 @@ const ProfileMenu = () => {
       if (!res.ok) throw res
 
       setShowCreateModal(false)
-      alert("Projet créé avec succès")
-      // TODO: refresh projects list or navigate to project
+      // broadcast created project so pages (Home) can update optimistically
+      try {
+        if (res && res.data) {
+          window.dispatchEvent(new CustomEvent('project:created', { detail: res.data }))
+        }
+      } catch (err) {
+        // ignore dispatch errors
+        console.error('Dispatch project:created error', err)
+      }
     } catch (error) {
       setSubmitting(false)
       console.error("Create project error:", error)

@@ -2,6 +2,15 @@ import React, { useEffect, useState } from "react"
 import { useParams, Link } from "react-router-dom"
 import api from "@/services/api"
 
+// Default category options
+const DEFAULT_CATEGORIES = [
+  'Transport',
+  'Repas',
+  'Hébergement',
+  'Matériel',
+  'Honoraires',
+]
+
 export default function ProjectView() {
   const { id } = useParams()
   const [project, setProject] = useState(null)
@@ -10,7 +19,10 @@ export default function ProjectView() {
   const [loading, setLoading] = useState(true)
   const [showAddModal, setShowAddModal] = useState(false)
   const [amount, setAmount] = useState("")
-  const [category, setCategory] = useState("")
+  // categories list (static defaults). The user may optionally type a custom category per-expense.
+  const [categories] = useState(DEFAULT_CATEGORIES)
+  const [category, setCategory] = useState(categories[0] || "")
+  const [customCategory, setCustomCategory] = useState("")
   const [description, setDescription] = useState("")
   const [date, setDate] = useState("")
   const [submitting, setSubmitting] = useState(false)
@@ -41,12 +53,15 @@ export default function ProjectView() {
     return () => (mounted = false)
   }, [id])
 
+  // no persistence: user-entered categories are not stored
+
   if (loading) return <div className="p-8">Chargement...</div>
 
   if (!project) return <div className="p-8">Projet introuvable ou accès refusé.</div>
 
   return (
-    <div className="p-8 max-w-3xl">
+    <div className="min-h-screen flex justify-center p-8">
+      <div className="w-full max-w-full">
       <div className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">{project.name}</h1>
@@ -59,7 +74,7 @@ export default function ProjectView() {
       </div>
 
       <div className="mb-4">
-        <button onClick={() => { setShowAddModal(true); setAmount(""); setCategory(""); setDescription(""); setDate(new Date().toISOString().slice(0,10)); }} className="px-3 py-1 rounded-md bg-primary text-white">
+        <button onClick={() => { setShowAddModal(true); setAmount(""); setCategory(categories[0] || ""); setDescription(""); setDate(new Date().toISOString().slice(0,10)); setCustomCategory(""); }} className="px-3 py-1 rounded-md bg-primary text-white">
           Ajouter une dépense
         </button>
       </div>
@@ -72,8 +87,8 @@ export default function ProjectView() {
           {expenses.map((e) => (
             <li key={e._id || e.id} className="p-3 bg-white rounded-md border flex justify-between">
               <div>
-                <div className="font-medium">{e.category}</div>
-                <div className="text-sm text-gray-600">{e.description}</div>
+                <div className="font-medium">{e.description}</div>
+                <div className="text-sm text-gray-600">{e.category}</div>
               </div>
               <div className="text-right">
                 <div className="font-semibold">{e.amount} €</div>
@@ -128,10 +143,12 @@ export default function ProjectView() {
             if (Number.isNaN(amt)) return alert('Montant invalide')
 
             const tempId = `tmp-${Date.now()}-${Math.floor(Math.random()*10000)}`
+            const chosenCategory = (customCategory || "").trim() || category
+
             const newExpense = {
               _id: tempId,
               amount: amt,
-              category,
+              category: chosenCategory,
               description,
               date,
               // mark optimistic for debugging if needed
@@ -147,7 +164,7 @@ export default function ProjectView() {
             setSubmitting(true)
 
             try {
-              const res = await api.post(`/expense/project/${id}`, { amount: amt, category, description, date })
+              const res = await api.post(`/expense/project/${id}`, { amount: amt, category: chosenCategory, description, date })
               setSubmitting(false)
               if (!res || !res.ok) {
                 // revert optimistic update
@@ -182,16 +199,24 @@ export default function ProjectView() {
           }} className="w-full max-w-md bg-white rounded-md p-6">
             <h3 className="text-lg font-semibold mb-4">Ajouter une dépense</h3>
             <label className="block mb-2">
+              <span className="text-sm text-gray-700">Titre</span>
+              <input autoFocus value={description} onChange={(ev) => setDescription(ev.target.value)} className="mt-1 block w-full rounded-md border px-3 py-2" />
+            </label>
+            <label className="block mb-2">
               <span className="text-sm text-gray-700">Montant</span>
-              <input autoFocus value={amount} onChange={(ev) => setAmount(ev.target.value)} className="mt-1 block w-full rounded-md border px-3 py-2" />
+              <input value={amount} onChange={(ev) => setAmount(ev.target.value)} className="mt-1 block w-full rounded-md border px-3 py-2" />
             </label>
             <label className="block mb-2">
               <span className="text-sm text-gray-700">Catégorie</span>
-              <input value={category} onChange={(ev) => setCategory(ev.target.value)} className="mt-1 block w-full rounded-md border px-3 py-2" />
-            </label>
-            <label className="block mb-2">
-              <span className="text-sm text-gray-700">Description</span>
-              <input value={description} onChange={(ev) => setDescription(ev.target.value)} className="mt-1 block w-full rounded-md border px-3 py-2" />
+              <select value={category} onChange={(ev) => { setCategory(ev.target.value); if (ev.target.value !== '') setCustomCategory(''); }} className="mt-1 block w-full rounded-md border px-3 py-2">
+                {categories.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+                <option value="">Autre (saisir ci-dessous)</option>
+              </select>
+              {category === '' && (
+                <input value={customCategory} onChange={(ev) => setCustomCategory(ev.target.value)} placeholder="Saisir une catégorie" className="mt-2 block w-full rounded-md border px-3 py-2" />
+              )}
             </label>
             <label className="block mb-4">
               <span className="text-sm text-gray-700">Date</span>
@@ -207,6 +232,7 @@ export default function ProjectView() {
 
       <div className="mt-6">
         <Link to="/" className="text-sm text-primary">← Retour aux projets</Link>
+      </div>
       </div>
     </div>
   )
